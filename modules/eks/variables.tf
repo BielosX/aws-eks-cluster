@@ -3,7 +3,7 @@ variable "cluster-name" {
 }
 
 variable "subnet-ids" {
-  type = string
+  type = list(string)
 }
 
 variable "instance-types" {
