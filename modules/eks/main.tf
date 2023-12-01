@@ -42,7 +42,9 @@ resource "aws_eks_cluster" "cluster" {
   name     = var.cluster-name
   role_arn = aws_iam_role.cluster-role.arn
   vpc_config {
-    subnet_ids = var.subnet-ids
+    subnet_ids              = var.subnet-ids
+    endpoint_private_access = var.private
+    endpoint_public_access  = !var.private
   }
 }
 
@@ -56,11 +58,25 @@ resource "aws_iam_openid_connect_provider" "connect-provider" {
   url             = data.tls_certificate.certificate.url
 }
 
+resource "aws_launch_template" "launch-template" {
+  // https://aws.github.io/aws-eks-best-practices/security/docs/iam/#restrict-access-to-the-instance-profile-assigned-to-the-worker-node
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+    instance_metadata_tags      = "enabled"
+  }
+}
+
 resource "aws_eks_node_group" "node-group" {
   cluster_name   = aws_eks_cluster.cluster.name
   node_role_arn  = aws_iam_role.node-role.arn
   subnet_ids     = var.subnet-ids
   instance_types = var.instance-types
+  launch_template {
+    id      = aws_launch_template.launch-template.id
+    version = aws_launch_template.launch-template.latest_version
+  }
 
   scaling_config {
     desired_size = var.min-size

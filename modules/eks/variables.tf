@@ -17,3 +17,8 @@ variable "min-size" {
 variable "max-size" {
   type = number
 }
+
+variable "private" {
+  type    = bool
+  default = false
+}
