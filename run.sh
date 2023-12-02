@@ -46,6 +46,9 @@ function install_fluent_bit() {
   local role_arn
   role_arn=$(jq -r '.RoleArn.OutputValue' <<< "$outputs")
   kubeconfig
+  kubectl create namespace "$namespace"
+  export CLUSTER_NAME="demo-cluster"
+  envsubst < cluster-info.yaml | kubectl apply -f -
   helm repo add fluent https://fluent.github.io/helm-charts
 read -r -d '\0' service_account << EOM
 {
@@ -58,9 +61,10 @@ read -r -d '\0' service_account << EOM
 \0
 EOM
   helm upgrade --install fluent-bit fluent/fluent-bit \
-    --create-namespace \
     --namespace "${namespace}" \
     -f env.yaml \
+    -f volumes.yaml \
+    -f config.yaml \
     --set-json "serviceAccount=${service_account}"
   popd
 }
@@ -77,6 +81,8 @@ function delete_stack() {
 
 function uninstall_fluent_bit() {
   helm uninstall fluent-bit --namespace "amazon-cloudwatch" --ignore-not-found
+  kubectl delete configmap fluent-bit-cluster-info -n "amazon-cloudwatch" --ignore-not-found=true
+  kubectl delete namespace "amazon-cloudwatch" --ignore-not-found=true
   delete_stack "${FLUENT_BIT_STACK}"
 }
 
