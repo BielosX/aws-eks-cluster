@@ -1,0 +1,36 @@
+Parameters:
+  OidcId:
+    Type: String
+  ServiceAccount:
+    Type: String
+  Namespace:
+    Type: String
+Resources:
+  FluentBitRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Fn::Sub: |
+          {
+            "Version": "2012-10-17", 
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Federated": "arn:aws:iam::${AWS::AccountId}:oidc-provider/oidc.eks.${AWS::Region}.amazonaws.com/id/${OidcId}"
+                },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "oidc.eks.${AWS::Region}.amazonaws.com/id/${OidcId}:sub": "system:serviceaccount:${Namespace}:${ServiceAccount}",
+                    "oidc.eks.${AWS::Region}.amazonaws.com/id/${OidcId}:aud": "sts.amazonaws.com" 
+                  }
+                }
+              }
+            ]
+          }
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+Outputs:
+  RoleArn:
+    Value: !GetAtt FluentBitRole.Arn
