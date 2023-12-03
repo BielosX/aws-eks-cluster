@@ -125,6 +125,10 @@ config:
         Rename              _SYSTEMD_UNIT               systemd_unit
         Rename              MESSAGE                     message
         Remove_regex        ^((?!hostname|systemd_unit|message).)*$
+    [FILTER]
+        Name                rewrite_tag
+        Match               application.*
+        Rule                $kubernetes['labels']['app.kubernetes.io/name'] ^.{1,63}$ named_resource false
   outputs: |
     [OUTPUT]
         Name                cloudwatch_logs
@@ -148,6 +152,16 @@ config:
         region              ${AWS_REGION}
         log_group_name      /aws/containerinsights/${CLUSTER_NAME}/host
         log_stream_prefix   ${HOST_NAME}.
+        auto_create_group   true
+        extra_user_agent    container-insights
+    [OUTPUT]
+        Name                cloudwatch_logs
+        Match               named_resource
+        region              ${AWS_REGION}
+        log_group_name      /aws/containerinsights/${CLUSTER_NAME}/named
+        log_group_template  /aws/containerinsights/${CLUSTER_NAME}/$kubernetes['namespace_name'].$kubernetes['labels']['app.kubernetes.io/name']
+        log_stream_name     ${HOST_NAME}
+        log_stream_template $kubernetes['pod_name']
         auto_create_group   true
         extra_user_agent    container-insights
   customParsers: |
