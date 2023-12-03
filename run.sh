@@ -65,6 +65,8 @@ EOM
     -f env.yaml \
     -f volumes.yaml \
     -f config.yaml \
+    -f network.yaml \
+    -f rbac.yaml \
     --set-json "serviceAccount=${service_account}"
   popd
 }

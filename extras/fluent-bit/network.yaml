@@ -1,0 +1,2 @@
+hostNetwork: true
+dnsPolicy: ClusterFirstWithHostNet

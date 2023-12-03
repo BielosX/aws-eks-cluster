@@ -116,7 +116,8 @@ config:
         K8S-Logging.Exclude Off
         Labels              On
         Annotations         On
-        Use_Kubelet         Off
+        Use_Kubelet         On
+        Kubelet_Port        10250
         Buffer_Size         0
     [FILTER]
         Name                modify
