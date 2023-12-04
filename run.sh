@@ -18,7 +18,7 @@ function destroy() {
 }
 
 function kubeconfig() {
-  rm ~/.kube/config
+  rm -f ~/.kube/config
   aws eks update-kubeconfig --region "$AWS_REGION" --name "demo-cluster"
 }
 
@@ -136,9 +136,9 @@ function install_ingress_nginx() {
   pushd extras/ingress-nginx
   local namespace="ingress-nginx"
   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-  kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
   helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
     -f nlb-service.yaml \
+    --create-namespace \
     --namespace "${namespace}"
   popd
 }
@@ -149,11 +149,16 @@ function install_dashboard() {
     --create-namespace --namespace kubernetes-dashboard \
     --set nginx.enabled=false \
     --set cert-manager.enabled=false \
-    --set app.ingress.enabled=false \
-    --set extraArgs="{--enable-skip-login, --disable-settings-authorizer, --enable-insecure-login}"
+    --set app.ingress.enabled=false
+  pushd extras/dashboard
+  kubectl apply -f permissions.yaml
+  popd
 }
 
 function uninstall_dashboard() {
+   pushd extras/dashboard
+   kubectl delete -f permissions.yaml
+   popd
    helm uninstall kubernetes-dashboard --ignore-not-found
 }
 
@@ -176,6 +181,11 @@ function uninstall() {
   uninstall_dashboard
 }
 
+function get_dashboard_secret_token() {
+   token=$(kubectl get secret dashboard-secret -n kubernetes-dashboard -o json | jq -r '.data.token' | base64 --decode)
+   echo "$token"
+}
+
 case "$1" in
   "deploy") deploy ;;
   "destroy") destroy ;;
@@ -183,4 +193,5 @@ case "$1" in
   "uninstall") uninstall ;;
   "kubeconfig") kubeconfig ;;
   "format") tofu fmt -recursive . ;;
+  "token") get_dashboard_secret_token ;;
 esac
