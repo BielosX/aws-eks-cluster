@@ -11,12 +11,6 @@ function deploy() {
   popd
 }
 
-function destroy() {
-  pushd live/demo-cluster
-  tofu destroy -auto-approve
-  popd
-}
-
 function kubeconfig() {
   rm -f ~/.kube/config
   aws eks update-kubeconfig --region "$AWS_REGION" --name "demo-cluster"
@@ -181,9 +175,24 @@ function uninstall() {
   uninstall_dashboard
 }
 
+function destroy() {
+  uninstall
+  pushd live/demo-cluster
+  tofu destroy -auto-approve
+  popd
+}
+
 function get_dashboard_secret_token() {
    token=$(kubectl get secret dashboard-secret -n kubernetes-dashboard -o json | jq -r '.data.token' | base64 --decode)
    echo "$token"
+}
+
+function dashboard_port_forward() {
+  local namespace="kubernetes-dashboard"
+  pod=$(kubectl get pods -n "${namespace}" \
+    -l app.kubernetes.io/name=kubernetes-dashboard -o json | jq -r '.items[0]')
+  pod_name=$(jq -r '.metadata.name' <<< "$pod")
+  kubectl -n "${namespace}" port-forward "${pod_name}" 8443:8443
 }
 
 case "$1" in
@@ -194,4 +203,5 @@ case "$1" in
   "kubeconfig") kubeconfig ;;
   "format") tofu fmt -recursive . ;;
   "token") get_dashboard_secret_token ;;
+  "dashboard-port-forward") dashboard_port_forward ;;
 esac

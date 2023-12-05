@@ -4,7 +4,31 @@ metadata:
   name: dashboard-role
 rules:
   - apiGroups: [""]
-    resources: ["pods"]
+    resources:
+      - "pods"
+      - "replicationcontrollers"
+      - "events"
+      - "namespaces"
+      - "configmaps"
+      - "secrets"
+      - "services"
+    verbs: ["get", "watch", "list"]
+  - apiGroups: ["batch"]
+    resources:
+      - "cronjobs"
+      - "jobs"
+    verbs: ["get", "watch", "list"]
+  - apiGroups: ["apps"]
+    resources:
+      - "deployments"
+      - "replicasets"
+      - "statefulsets"
+      - "daemonsets"
+    verbs: ["get", "watch", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - "ingresses"
+      - "ingressclasses"
     verbs: ["get", "watch", "list"]
 ---
 apiVersion: v1
