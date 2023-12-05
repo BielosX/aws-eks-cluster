@@ -4,6 +4,10 @@ export AWS_REGION="eu-west-1"
 export AWS_PAGER=""
 FLUENT_BIT_STACK="fluent-bit-role"
 LB_CONTROLLER_STACK="load-balancer-controller-role"
+WITH_FLUENT_BIT=false
+WITH_LB_CONTROLLER=false
+WITH_INGRESS_NGINX=false
+WITH_DASHBOARD=false
 
 function deploy() {
   pushd live/demo-cluster
@@ -32,6 +36,7 @@ function get_stack_outputs() {
 }
 
 function install_fluent_bit() {
+  echo "Installing Fluent-Bit"
   pushd extras/fluent-bit
   local service_account_name="fluent-bit-sa"
   local namespace="amazon-cloudwatch"
@@ -88,6 +93,7 @@ function uninstall_fluent_bit() {
 }
 
 function install_load_balancer_controller() {
+  echo "Installing AWS Load Balancer Controller"
   pushd extras/load-balancer-controller
   local namespace="kube-system"
   local service_account_name="aws-load-balancer-controller"
@@ -127,6 +133,7 @@ function uninstall_load_balancer_controller() {
 }
 
 function install_ingress_nginx() {
+  echo "Installing Ingress Nginx"
   pushd extras/ingress-nginx
   local namespace="ingress-nginx"
   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
@@ -138,6 +145,7 @@ function install_ingress_nginx() {
 }
 
 function install_dashboard() {
+  echo "Installing Kubernetes Dashboard"
   helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/
   helm upgrade --install kubernetes-dashboard kubernetes-dashboard/kubernetes-dashboard \
     --create-namespace --namespace kubernetes-dashboard \
@@ -164,10 +172,47 @@ function uninstall_ingress_nginx() {
 }
 
 function install() {
-  install_fluent_bit
-  install_load_balancer_controller
-  install_ingress_nginx
-  install_dashboard
+  number_of_args="$#"
+  while (( number_of_args > 0 )); do
+    case "$1" in
+      "dashboard")
+        WITH_DASHBOARD=true
+        shift
+        ;;
+      "ingress-nginx")
+        WITH_INGRESS_NGINX=true
+        shift
+        ;;
+      "lb-controller")
+        WITH_LB_CONTROLLER=true
+        shift
+        ;;
+      "fluent-bit")
+        WITH_FLUENT_BIT=true
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+    number_of_args="$#"
+  done
+
+  if [ "${WITH_FLUENT_BIT}" = true ]; then
+    install_fluent_bit
+  fi
+  if [ "${WITH_LB_CONTROLLER}" = true ]; then
+    install_load_balancer_controller
+  fi
+  if [ "${WITH_LB_CONTROLLER}" = false ] && [ "${WITH_INGRESS_NGINX}" = true ]; then
+    install_load_balancer_controller
+    install_ingress_nginx
+  elif [ "${WITH_INGRESS_NGINX}" = true ]; then
+    install_ingress_nginx
+  fi
+  if [ "${WITH_DASHBOARD}" = true ]; then
+    install_dashboard
+  fi
 }
 
 function uninstall() {
@@ -200,7 +245,7 @@ function dashboard_port_forward() {
 case "$1" in
   "deploy") deploy ;;
   "destroy") destroy ;;
-  "install") install ;;
+  "install") install "$@" ;;
   "uninstall") uninstall ;;
   "kubeconfig") kubeconfig ;;
   "format") tofu fmt -recursive . ;;
