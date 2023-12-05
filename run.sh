@@ -160,8 +160,8 @@ function install_dashboard() {
 
 function uninstall_dashboard() {
   pushd extras/dashboard
-  kubectl delete -f secret.yaml
-  kubectl delete -f service-account.yaml
+  kubectl delete -f secret.yaml --ignore-not-found=true
+  kubectl delete -f service-account.yaml --ignore-not-found=true
   popd
   helm uninstall kubernetes-dashboard --ignore-not-found
 }
