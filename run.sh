@@ -145,15 +145,17 @@ function install_dashboard() {
     --set cert-manager.enabled=false \
     --set app.ingress.enabled=false
   pushd extras/dashboard
-  kubectl apply -f permissions.yaml
+  kubectl apply -f service-account.yaml
+  kubectl apply -f secret.yaml
   popd
 }
 
 function uninstall_dashboard() {
-   pushd extras/dashboard
-   kubectl delete -f permissions.yaml
-   popd
-   helm uninstall kubernetes-dashboard --ignore-not-found
+  pushd extras/dashboard
+  kubectl delete -f secret.yaml
+  kubectl delete -f service-account.yaml
+  popd
+  helm uninstall kubernetes-dashboard --ignore-not-found
 }
 
 function uninstall_ingress_nginx() {
