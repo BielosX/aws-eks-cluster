@@ -8,6 +8,7 @@ WITH_FLUENT_BIT=false
 WITH_LB_CONTROLLER=false
 WITH_INGRESS_NGINX=false
 WITH_DASHBOARD=false
+WITH_PROMETHEUS_STACK=false
 
 function deploy() {
   pushd live/demo-cluster
@@ -158,6 +159,16 @@ function install_dashboard() {
   popd
 }
 
+function install_prometheus_stack() {
+  echo "Installing Prometheus Stack"
+  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+  helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack
+}
+
+function uninstall_prometheus_stack() {
+  helm uninstall prometheus-stack --ignore-not-found
+}
+
 function uninstall_dashboard() {
   pushd extras/dashboard
   kubectl delete -f secret.yaml --ignore-not-found=true
@@ -175,6 +186,10 @@ function install() {
   number_of_args="$#"
   while (( number_of_args > 0 )); do
     case "$1" in
+      "prometheus-stack")
+        WITH_PROMETHEUS_STACK=true
+        shift
+        ;;
       "dashboard")
         WITH_DASHBOARD=true
         shift
@@ -213,17 +228,23 @@ function install() {
   if [ "${WITH_DASHBOARD}" = true ]; then
     install_dashboard
   fi
+  if [ "${WITH_PROMETHEUS_STACK}" = true ]; then
+    install_prometheus_stack
+  fi
 }
 
 function uninstall() {
   uninstall_fluent_bit
+  uninstall_prometheus_stack
   uninstall_ingress_nginx
   uninstall_load_balancer_controller
   uninstall_dashboard
 }
 
 function destroy() {
-  uninstall
+  if aws eks describe-cluster --name demo-cluster &> /dev/null; then
+    uninstall
+  fi
   pushd live/demo-cluster
   tofu destroy -auto-approve
   popd
