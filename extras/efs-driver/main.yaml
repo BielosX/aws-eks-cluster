@@ -1,0 +1,41 @@
+Parameters:
+  OidcId:
+    Type: String
+Resources:
+  EfsFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      PerformanceMode: "generalPurpose"
+      ThroughputMode: "elastic"
+  EfsDriverRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Fn::Sub: |
+          {
+            "Version": "2012-10-17", 
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Federated": "arn:aws:iam::${AWS::AccountId}:oidc-provider/oidc.eks.${AWS::Region}.amazonaws.com/id/${OidcId}"
+                },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "oidc.eks.${AWS::Region}.amazonaws.com/id/${OidcId}:sub": "system:serviceaccount:kube-system:efs-csi-controller-sa",
+                    "oidc.eks.${AWS::Region}.amazonaws.com/id/${OidcId}:aud": "sts.amazonaws.com" 
+                  }
+                }
+              }
+            ]
+          }
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
+Outputs:
+  RoleArn:
+    Value: !GetAtt EfsDriverRole.Arn
+  FileSystemArn:
+    Value: !GetAtt EfsFileSystem.Arn
+  FileSystemId:
+    Value: !GetAtt EfsFileSystem.FileSystemId

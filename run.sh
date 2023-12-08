@@ -4,11 +4,13 @@ export AWS_REGION="eu-west-1"
 export AWS_PAGER=""
 FLUENT_BIT_STACK="fluent-bit-role"
 LB_CONTROLLER_STACK="load-balancer-controller-role"
+EFS_DRIVER_STACK="efs-driver"
 WITH_FLUENT_BIT=false
 WITH_LB_CONTROLLER=false
 WITH_INGRESS_NGINX=false
 WITH_DASHBOARD=false
 WITH_PROMETHEUS_STACK=false
+WITH_EFS_DRIVER=false
 
 function deploy() {
   pushd live/demo-cluster
@@ -55,6 +57,7 @@ function install_fluent_bit() {
   export CLUSTER_NAME="demo-cluster"
   envsubst < cluster-info.yaml | kubectl apply -f -
   helm repo add fluent https://fluent.github.io/helm-charts
+  helm repo update fluent
 read -r -d '\0' service_account << EOM
 {
   "create": true,
@@ -119,6 +122,7 @@ read -r -d '\0' service_account << EOM
 EOM
   get_cluster_vpc_id
   helm repo add eks https://aws.github.io/eks-charts
+  helm repo update eks
   helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
     --namespace "${namespace}" \
     --set clusterName="demo-cluster" \
@@ -138,6 +142,7 @@ function install_ingress_nginx() {
   pushd extras/ingress-nginx
   local namespace="ingress-nginx"
   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+  helm repo update ingress-nginx
   helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
     -f nlb-service.yaml \
     --create-namespace \
@@ -148,6 +153,7 @@ function install_ingress_nginx() {
 function install_dashboard() {
   echo "Installing Kubernetes Dashboard"
   helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/
+  helm repo update kubernetes-dashboard
   helm upgrade --install kubernetes-dashboard kubernetes-dashboard/kubernetes-dashboard \
     --create-namespace --namespace kubernetes-dashboard \
     --set nginx.enabled=false \
@@ -161,12 +167,25 @@ function install_dashboard() {
 
 function install_prometheus_stack() {
   echo "Installing Prometheus Stack"
+  pushd extras/prometheus-stack
+  get_stack_outputs "${EFS_DRIVER_STACK}"
+  local fs_id
+  fs_id=$(jq -r '.FileSystemId.OutputValue' <<< "$outputs")
+  export FS_ID="${fs_id}"
+  envsubst < storage-class.yaml | kubectl apply -f -
   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-  helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack
+  helm repo update prometheus-community
+  init_password=$(openssl rand -base64 12)
+  helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
+    --set grafana.adminPassword="${init_password}" \
+    -f storage.yaml
+  echo "Initial Grafana password: ${init_password}"
+  popd
 }
 
 function uninstall_prometheus_stack() {
   helm uninstall prometheus-stack --ignore-not-found
+  kubectl delete storageclass prometheus-stack-efs-sc --ignore-not-found=true
 }
 
 function uninstall_dashboard() {
@@ -182,10 +201,45 @@ function uninstall_ingress_nginx() {
    kubectl delete namespace "ingress-nginx" --ignore-not-found=true
 }
 
+function install_efs_driver() {
+  get_oidc_id
+  pushd extras/efs-driver
+  aws cloudformation deploy \
+    --template-file main.yaml \
+    --stack-name "${EFS_DRIVER_STACK}" \
+    --capabilities "CAPABILITY_IAM" "CAPABILITY_NAMED_IAM" \
+    --parameter-overrides "OidcId=${oidc_id}"
+  helm repo add aws-efs-csi-driver https://kubernetes-sigs.github.io/aws-efs-csi-driver/
+  helm repo update aws-efs-csi-driver
+read -r -d '\0' service_account << EOM
+{
+  "create": true,
+  "name": "efs-csi-controller-sa",
+  "annotations": {
+    "eks.amazonaws.com/role-arn": "${role_arn}"
+  }
+}
+\0
+EOM
+  helm upgrade --install aws-efs-csi-driver \
+    --namespace kube-system aws-efs-csi-driver/aws-efs-csi-driver \
+    --set-json "serviceAccount=${service_account}"
+  popd
+}
+
+function uninstall_efs_driver() {
+  helm uninstall aws-efs-csi-driver --namespace kube-system --ignore-not-found
+  delete_stack "${EFS_DRIVER_STACK}"
+}
+
 function install() {
   number_of_args="$#"
   while (( number_of_args > 0 )); do
     case "$1" in
+      "efs-driver")
+        WITH_EFS_DRIVER=true
+        shift
+        ;;
       "prometheus-stack")
         WITH_PROMETHEUS_STACK=true
         shift
@@ -212,7 +266,7 @@ function install() {
     esac
     number_of_args="$#"
   done
-
+  kubeconfig
   if [ "${WITH_FLUENT_BIT}" = true ]; then
     install_fluent_bit
   fi
@@ -228,7 +282,13 @@ function install() {
   if [ "${WITH_DASHBOARD}" = true ]; then
     install_dashboard
   fi
-  if [ "${WITH_PROMETHEUS_STACK}" = true ]; then
+  if [ "${WITH_EFS_DRIVER}" = true ]; then
+    install_efs_driver
+  fi
+  if [ "${WITH_EFS_DRIVER}" = false ] && [ "${WITH_PROMETHEUS_STACK}" = true ]; then
+    install_efs_driver
+    install_prometheus_stack
+  elif [ "${WITH_PROMETHEUS_STACK}" = true ]; then
     install_prometheus_stack
   fi
 }
@@ -239,6 +299,7 @@ function uninstall() {
   uninstall_ingress_nginx
   uninstall_load_balancer_controller
   uninstall_dashboard
+  uninstall_efs_driver
 }
 
 function destroy() {

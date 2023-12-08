@@ -1,0 +1,11 @@
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: prometheus-stack-efs-sc
+provisioner: efs.csi.aws.com
+parameters:
+  provisioningMode: efs-ap
+  fileSystemId: "${FS_ID}"
+  directoryPerms: "700"
+  basePath: "/prometheus-stack"
+  ensureUniqueDirectory: "true"
