@@ -5,6 +5,7 @@ export AWS_PAGER=""
 FLUENT_BIT_STACK="fluent-bit-role"
 LB_CONTROLLER_STACK="load-balancer-controller-role"
 EFS_DRIVER_STACK="efs-driver"
+TERRAFORM_BACKEND_STACK="terraform-backend"
 WITH_FLUENT_BIT=false
 WITH_LB_CONTROLLER=false
 WITH_INGRESS_NGINX=false
@@ -13,8 +14,22 @@ WITH_PROMETHEUS_STACK=false
 WITH_EFS_DRIVER=false
 
 function deploy() {
-  pushd live/demo-cluster
-  tofu init && tofu apply -auto-approve
+  pushd live
+  local table_name="aws-eks-cluster"
+  aws cloudformation deploy \
+    --template-file backend.yaml \
+    --stack-name "${TERRAFORM_BACKEND_STACK}" \
+    --parameter-overrides "TableName=${table_name}" "BucketNamePrefix=aws-eks-cluster"
+  pushd demo-cluster
+  get_stack_outputs "${TERRAFORM_BACKEND_STACK}"
+  local bucket_name
+  bucket_name=$(jq -r '.BucketName.OutputValue' <<< "$outputs")
+  tofu init -backend-config="bucket=${bucket_name}" \
+    -backend-config="dynamodb_table=${table_name}" \
+    -backend-config="region=${AWS_REGION}" \
+    -backend-config="key=cluster.tfstate"
+  tofu apply -auto-approve
+  popd
   popd
 }
 
@@ -52,7 +67,6 @@ function install_fluent_bit() {
   get_stack_outputs "${FLUENT_BIT_STACK}"
   local role_arn
   role_arn=$(jq -r '.RoleArn.OutputValue' <<< "$outputs")
-  kubeconfig
   kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
   export CLUSTER_NAME="demo-cluster"
   envsubst < cluster-info.yaml | kubectl apply -f -
@@ -177,6 +191,7 @@ function install_prometheus_stack() {
   helm repo update prometheus-community
   init_password=$(openssl rand -base64 12)
   helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
+    --namespace prometheus-stack --create-namespace \
     --set grafana.adminPassword="${init_password}" \
     -f storage.yaml
   echo "Initial Grafana password: ${init_password}"
@@ -184,7 +199,7 @@ function install_prometheus_stack() {
 }
 
 function uninstall_prometheus_stack() {
-  helm uninstall prometheus-stack --ignore-not-found
+  helm uninstall prometheus-stack --namespace prometheus-stack --ignore-not-found
   kubectl delete storageclass prometheus-stack-efs-sc --ignore-not-found=true
 }
 
@@ -294,6 +309,7 @@ function install() {
 }
 
 function uninstall() {
+  kubeconfig
   uninstall_fluent_bit
   uninstall_prometheus_stack
   uninstall_ingress_nginx
@@ -309,6 +325,11 @@ function destroy() {
   pushd live/demo-cluster
   tofu destroy -auto-approve
   popd
+  get_stack_outputs "${TERRAFORM_BACKEND_STACK}"
+  local bucket_name
+  bucket_name=$(jq -r '.BucketName.OutputValue' <<< "$outputs")
+  aws s3 rm "s3://${bucket_name}/cluster.tfstate"
+  delete_stack "${TERRAFORM_BACKEND_STACK}"
 }
 
 function get_dashboard_secret_token() {

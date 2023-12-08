@@ -1,4 +1,9 @@
+provider "aws" {
+  region = "eu-west-1"
+}
+
 terraform {
+  backend "s3" {}
   required_providers {
     aws = {
       version = ">= 5.28.0"
