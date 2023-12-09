@@ -8,6 +8,8 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "${BucketNamePrefix}-${AWS::Region}-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: "Enabled"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true

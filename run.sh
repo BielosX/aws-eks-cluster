@@ -318,6 +318,39 @@ function uninstall() {
   uninstall_efs_driver
 }
 
+function delete_versions() {
+  local response="$1"
+  versions=$(jq -r '.Versions' <<< "$response")
+  local length
+  length=$(jq -r 'length' <<< "$versions")
+  for i in $(seq 0 $((length-1))); do
+    local version_id
+    local key
+    local item
+    item=$(jq -r ".[$i]" <<< "$versions")
+    version_id=$(jq -r '.VersionId' <<< "$item")
+    key=$(jq -r '.Key' <<< "$item")
+    echo "Deleting item VersionId=${version_id} Key=${key}"
+    aws s3api delete-object --bucket "$bucket_name" --key "$key" --version-id "$version_id" &> /dev/null
+  done
+}
+
+function clean_backend_bucket() {
+  local bucket_name="$1"
+  local response
+  local versions
+  local next_token
+  echo "Removing all versions from ${bucket_name}"
+  response=$(aws s3api list-object-versions --bucket "${bucket_name}")
+  next_token=$(jq -r '.NextToken' <<< "$response")
+  delete_versions "$response"
+  while [ "${next_token}" != "null" ]; do
+    response=$(aws s3api list-object-versions --bucket "${bucket_name}" --starting-token "$next_token")
+    next_token=$(jq -r '.NextToken' <<< "$response")
+    delete_versions "$response"
+  done
+}
+
 function destroy() {
   if aws eks describe-cluster --name demo-cluster &> /dev/null; then
     uninstall
@@ -328,7 +361,7 @@ function destroy() {
   get_stack_outputs "${TERRAFORM_BACKEND_STACK}"
   local bucket_name
   bucket_name=$(jq -r '.BucketName.OutputValue' <<< "$outputs")
-  aws s3 rm "s3://${bucket_name}/cluster.tfstate"
+  clean_backend_bucket "${bucket_name}"
   delete_stack "${TERRAFORM_BACKEND_STACK}"
 }
 
