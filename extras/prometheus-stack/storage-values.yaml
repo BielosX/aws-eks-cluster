@@ -1,0 +1,28 @@
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: efs-sc
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 5Gi
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager-efs-pv
+prometheus:
+  prometheusSpec:
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: efs-sc
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 5Gi
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus-efs-pv

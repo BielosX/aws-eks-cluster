@@ -1,23 +1,43 @@
-global:
-  alertmanager:
-    alertmanagerSpec:
-      storage:
-        volumeClaimTemplate:
-          spec:
-            storageClassName: prometheus-stack-efs-sc
-            accessModes: ["ReadWriteOnce"]
-            resources:
-              requests:
-                storage: 5Gi
-            selector: {}
-  prometheus:
-    prometheusSpec:
-      storageSpec:
-        volumeClaimTemplate:
-          spec:
-            storageClassName: prometheus-stack-efs-sc
-            accessModes: ["ReadWriteOnce"]
-            resources:
-              requests:
-                storage: 5Gi
-            selector: {}
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: efs-sc
+provisioner: efs.csi.aws.com
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: prometheus-efs-pv
+  namespace: prometheus-stack
+  labels:
+    app.kubernetes.io/name: prometheus-efs-pv
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: efs-sc
+  persistentVolumeReclaimPolicy: Delete
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: "${FS_ID}"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: alertmanager-efs-pv
+  namespace: prometheus-stack
+  labels:
+    app.kubernetes.io/name: alertmanager-efs-pv
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: efs-sc
+  persistentVolumeReclaimPolicy: Delete
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: "${FS_ID}"

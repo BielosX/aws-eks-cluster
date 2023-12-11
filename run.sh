@@ -4,24 +4,24 @@ export AWS_REGION="eu-west-1"
 export AWS_PAGER=""
 FLUENT_BIT_STACK="fluent-bit-role"
 LB_CONTROLLER_STACK="load-balancer-controller-role"
-EFS_DRIVER_STACK="efs-driver"
-TERRAFORM_BACKEND_STACK="terraform-backend"
+CLUSTER_BACKEND_STACK="cluster-backend"
+EFS_DRIVER_BACKEND_STACK="efs-driver-backend"
 WITH_FLUENT_BIT=false
 WITH_LB_CONTROLLER=false
 WITH_INGRESS_NGINX=false
 WITH_DASHBOARD=false
 WITH_PROMETHEUS_STACK=false
 WITH_EFS_DRIVER=false
+SKIP_UNINSTALL=false
 
 function deploy() {
-  pushd live
   local table_name="aws-eks-cluster"
   aws cloudformation deploy \
     --template-file backend.yaml \
-    --stack-name "${TERRAFORM_BACKEND_STACK}" \
+    --stack-name "${CLUSTER_BACKEND_STACK}" \
     --parameter-overrides "TableName=${table_name}" "BucketNamePrefix=aws-eks-cluster"
-  pushd demo-cluster
-  get_stack_outputs "${TERRAFORM_BACKEND_STACK}"
+  pushd live/demo-cluster
+  get_stack_outputs "${CLUSTER_BACKEND_STACK}"
   local bucket_name
   bucket_name=$(jq -r '.BucketName.OutputValue' <<< "$outputs")
   tofu init -backend-config="bucket=${bucket_name}" \
@@ -29,7 +29,6 @@ function deploy() {
     -backend-config="region=${AWS_REGION}" \
     -backend-config="key=cluster.tfstate"
   tofu apply -auto-approve
-  popd
   popd
 }
 
@@ -47,6 +46,13 @@ function get_oidc_id() {
 
 function get_cluster_vpc_id() {
     vpc_id=$(aws eks describe-cluster --name demo-cluster | jq -r '.cluster.resourcesVpcConfig.vpcId')
+}
+
+function get_private_subnet_ids() {
+  get_cluster_vpc_id
+  subnet_ids=$(aws ec2 describe-subnets \
+    --filters "Name=vpc-id,Values=${vpc_id}" "Name=tag:Name,Values=demo-cluster-vpc-private-subnet" \
+    | jq -c '.Subnets | map(.SubnetId)')
 }
 
 function get_stack_outputs() {
@@ -181,26 +187,34 @@ function install_dashboard() {
 
 function install_prometheus_stack() {
   echo "Installing Prometheus Stack"
-  pushd extras/prometheus-stack
-  get_stack_outputs "${EFS_DRIVER_STACK}"
+
+  pushd extras/efs-driver/live/demo-cluster
   local fs_id
-  fs_id=$(jq -r '.FileSystemId.OutputValue' <<< "$outputs")
+  fs_id=$(tofu output -raw fs-id)
+  popd
+
+  pushd extras/prometheus-stack
+  local namespace="prometheus-stack"
+  kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
   export FS_ID="${fs_id}"
-  envsubst < storage-class.yaml | kubectl apply -f -
+  envsubst < storage.yaml | kubectl apply -f -
   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
   helm repo update prometheus-community
   init_password=$(openssl rand -base64 12)
   helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
-    --namespace prometheus-stack --create-namespace \
+    --namespace prometheus-stack \
     --set grafana.adminPassword="${init_password}" \
-    -f storage.yaml
+    -f storage-values.yaml
   echo "Initial Grafana password: ${init_password}"
   popd
 }
 
 function uninstall_prometheus_stack() {
   helm uninstall prometheus-stack --namespace prometheus-stack --ignore-not-found
+  kubectl delete persistentvolume alertmanager-efs-pv --ignore-not-found=true
+  kubectl delete persistentvolume prometheus-efs-pv --ignore-not-found=true
   kubectl delete storageclass prometheus-stack-efs-sc --ignore-not-found=true
+  kubectl delete namespace "prometheus-stack" --ignore-not-found=true
 }
 
 function uninstall_dashboard() {
@@ -217,16 +231,38 @@ function uninstall_ingress_nginx() {
 }
 
 function install_efs_driver() {
-  get_oidc_id
-  pushd extras/efs-driver
+  local table_name="efs-driver"
   aws cloudformation deploy \
-    --template-file main.yaml \
-    --stack-name "${EFS_DRIVER_STACK}" \
-    --capabilities "CAPABILITY_IAM" "CAPABILITY_NAMED_IAM" \
-    --parameter-overrides "OidcId=${oidc_id}"
-  helm repo add aws-efs-csi-driver https://kubernetes-sigs.github.io/aws-efs-csi-driver/
-  helm repo update aws-efs-csi-driver
-read -r -d '\0' service_account << EOM
+    --template-file backend.yaml \
+    --stack-name "${EFS_DRIVER_BACKEND_STACK}" \
+    --parameter-overrides "TableName=${table_name}" "BucketNamePrefix=efs-driver"
+  pushd extras/efs-driver/live/demo-cluster
+  get_stack_outputs "${EFS_DRIVER_BACKEND_STACK}"
+  local bucket_name
+  bucket_name=$(jq -r '.BucketName.OutputValue' <<< "$outputs")
+  tofu init -backend-config="bucket=${bucket_name}" \
+    -backend-config="dynamodb_table=${table_name}" \
+    -backend-config="region=${AWS_REGION}" \
+    -backend-config="key=efs-driver.tfstate"
+  get_oidc_id
+  get_cluster_vpc_id
+  get_private_subnet_ids
+  tofu apply -auto-approve \
+    -var="oicd-id=${oidc_id}" \
+    -var="vpc-id=${vpc_id}" \
+    -var="subnet-ids=${subnet_ids}"
+  local role_arn
+  read -r -d '\0' node_sa << EOM
+{
+  "create": true,
+  "name": "efs-csi-node-sa",
+  "annotations": {
+    "eks.amazonaws.com/role-arn": "${role_arn}"
+  }
+}
+\0
+EOM
+  read -r -d '\0' controller_sa << EOM
 {
   "create": true,
   "name": "efs-csi-controller-sa",
@@ -236,15 +272,31 @@ read -r -d '\0' service_account << EOM
 }
 \0
 EOM
+  helm repo add aws-efs-csi-driver https://kubernetes-sigs.github.io/aws-efs-csi-driver/
+  helm repo update aws-efs-csi-driver
   helm upgrade --install aws-efs-csi-driver \
     --namespace kube-system aws-efs-csi-driver/aws-efs-csi-driver \
-    --set-json "serviceAccount=${service_account}"
+    --set-json "controller.serviceAccount=${controller_sa}" \
+    --set-json "node.serviceAccount=${node_sa}"
   popd
 }
 
 function uninstall_efs_driver() {
   helm uninstall aws-efs-csi-driver --namespace kube-system --ignore-not-found
-  delete_stack "${EFS_DRIVER_STACK}"
+  pushd extras/efs-driver/live/demo-cluster
+    get_oidc_id
+    get_cluster_vpc_id
+    get_private_subnet_ids
+    tofu destroy -auto-approve \
+      -var="oicd-id=${oidc_id}" \
+      -var="vpc-id=${vpc_id}" \
+      -var="subnet-ids=${subnet_ids}"
+  popd
+  get_stack_outputs "${EFS_DRIVER_BACKEND_STACK}"
+  local bucket_name
+  bucket_name=$(jq -r '.BucketName.OutputValue' <<< "$outputs")
+  clean_backend_bucket "${bucket_name}"
+  delete_stack "${EFS_DRIVER_BACKEND_STACK}"
 }
 
 function install() {
@@ -352,17 +404,30 @@ function clean_backend_bucket() {
 }
 
 function destroy() {
-  if aws eks describe-cluster --name demo-cluster &> /dev/null; then
+  number_of_args="$#"
+  while (( number_of_args > 0 )); do
+    case "$1" in
+      "--skip-uninstall")
+        SKIP_UNINSTALL=true
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+    number_of_args="$#"
+  done
+  if [ "${SKIP_UNINSTALL}" = false ] && aws eks describe-cluster --name demo-cluster &> /dev/null; then
     uninstall
   fi
   pushd live/demo-cluster
   tofu destroy -auto-approve
   popd
-  get_stack_outputs "${TERRAFORM_BACKEND_STACK}"
+  get_stack_outputs "${CLUSTER_BACKEND_STACK}"
   local bucket_name
   bucket_name=$(jq -r '.BucketName.OutputValue' <<< "$outputs")
   clean_backend_bucket "${bucket_name}"
-  delete_stack "${TERRAFORM_BACKEND_STACK}"
+  delete_stack "${CLUSTER_BACKEND_STACK}"
 }
 
 function get_dashboard_secret_token() {
@@ -380,7 +445,7 @@ function dashboard_port_forward() {
 
 case "$1" in
   "deploy") deploy ;;
-  "destroy") destroy ;;
+  "destroy") destroy "$@" ;;
   "install") install "$@" ;;
   "uninstall") uninstall ;;
   "kubeconfig") kubeconfig ;;
