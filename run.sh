@@ -204,13 +204,22 @@ function install_prometheus_stack() {
   helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
     --namespace prometheus-stack \
     --set grafana.adminPassword="${init_password}" \
-    -f storage-values.yaml
+    -f storage-values.yaml \
+    -f security.yaml
   echo "Initial Grafana password: ${init_password}"
   popd
 }
 
 function uninstall_prometheus_stack() {
   helm uninstall prometheus-stack --namespace prometheus-stack --ignore-not-found
+  pvc=$(kubectl get persistentvolumeclaims -n prometheus-stack -o json | jq -r '.items | map(.metadata.name)')
+  local length
+  length=$(jq -r 'length' <<< "$pvc")
+  for i in $(seq 0 $((length-1))); do
+    name=$(jq -r ".[$i]" <<< "$pvc")
+    echo "Deleting PVC ${name}"
+    kubectl delete persistentvolumeclaims "${name}" -n prometheus-stack --ignore-not-found=true
+  done
   kubectl delete persistentvolume alertmanager-efs-pv --ignore-not-found=true
   kubectl delete persistentvolume prometheus-efs-pv --ignore-not-found=true
   kubectl delete storageclass prometheus-stack-efs-sc --ignore-not-found=true
