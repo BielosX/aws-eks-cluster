@@ -13,6 +13,7 @@ WITH_DASHBOARD=false
 WITH_PROMETHEUS_STACK=false
 WITH_EFS_DRIVER=false
 SKIP_UNINSTALL=false
+KEEP_LOGS=false
 
 function deploy() {
   local table_name="aws-eks-cluster"
@@ -292,20 +293,23 @@ EOM
 
 function uninstall_efs_driver() {
   helm uninstall aws-efs-csi-driver --namespace kube-system --ignore-not-found
-  pushd extras/efs-driver/live/demo-cluster
-    get_oidc_id
-    get_cluster_vpc_id
-    get_private_subnet_ids
-    tofu destroy -auto-approve \
-      -var="oicd-id=${oidc_id}" \
-      -var="vpc-id=${vpc_id}" \
-      -var="subnet-ids=${subnet_ids}"
-  popd
-  get_stack_outputs "${EFS_DRIVER_BACKEND_STACK}"
-  local bucket_name
-  bucket_name=$(jq -r '.BucketName.OutputValue' <<< "$outputs")
-  clean_backend_bucket "${bucket_name}"
-  delete_stack "${EFS_DRIVER_BACKEND_STACK}"
+  if aws cloudformation describe-stacks --stack-name "${EFS_DRIVER_BACKEND_STACK}" &> /dev/null; then
+    pushd extras/efs-driver/live/demo-cluster
+      get_oidc_id
+      get_cluster_vpc_id
+      get_private_subnet_ids
+        tofu destroy -auto-approve \
+          -var="oicd-id=${oidc_id}" \
+          -var="vpc-id=${vpc_id}" \
+          -var="subnet-ids=${subnet_ids}"
+        rm -rf .terraform
+    popd
+    get_stack_outputs "${EFS_DRIVER_BACKEND_STACK}"
+    local bucket_name
+    bucket_name=$(jq -r '.BucketName.OutputValue' <<< "$outputs")
+    clean_backend_bucket "${bucket_name}"
+    delete_stack "${EFS_DRIVER_BACKEND_STACK}"
+  fi
 }
 
 function install() {
@@ -412,12 +416,43 @@ function clean_backend_bucket() {
   done
 }
 
+function delete_log_groups_page() {
+  local response="$1"
+  local length
+  local group_name
+  local groups
+  groups=$(jq -r '.logGroups' <<< "$response")
+  length=$(jq -r 'length' <<< "$groups")
+  for i in $(seq 0 $((length-1))); do
+    group_name=$(jq -r ".[$i].logGroupName" <<< "$groups")
+    echo "Deleting log group ${group_name}"
+    aws logs delete-log-group --log-group-name "$group_name"
+  done
+}
+
+function remove_log_groups() {
+  local next_token
+  response=$(aws logs describe-log-groups --log-group-name-prefix "/aws/containerinsights/demo-cluster")
+  next_token=$(jq -r '.NextToken' <<< "$response")
+  delete_log_groups_page "$response"
+  while [ "${next_token}" != "null" ]; do
+    response=$(aws logs describe-log-groups \
+      --log-group-name-prefix "/aws/containerinsights/demo-cluster" --starting-token "$next_token")
+    next_token=$(jq -r '.NextToken' <<< "$response")
+    delete_log_groups_page "$response"
+  done
+}
+
 function destroy() {
   number_of_args="$#"
   while (( number_of_args > 0 )); do
     case "$1" in
       "--skip-uninstall")
         SKIP_UNINSTALL=true
+        shift
+        ;;
+      "--keep-logs")
+        KEEP_LOGS=true
         shift
         ;;
       *)
@@ -437,6 +472,12 @@ function destroy() {
   bucket_name=$(jq -r '.BucketName.OutputValue' <<< "$outputs")
   clean_backend_bucket "${bucket_name}"
   delete_stack "${CLUSTER_BACKEND_STACK}"
+  if [ "${KEEP_LOGS}" = false ]; then
+    echo "Removing cluster logs"
+    remove_log_groups
+  else
+    echo "Cluster log groups will be kept"
+  fi
 }
 
 function get_dashboard_secret_token() {
