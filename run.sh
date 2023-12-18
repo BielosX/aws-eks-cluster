@@ -14,6 +14,9 @@ WITH_PROMETHEUS_STACK=false
 WITH_EFS_DRIVER=false
 SKIP_UNINSTALL=false
 KEEP_LOGS=false
+WITH_CALICO=false
+CALICO_OPERATOR_VERSION="v3.26.4"
+CALICO_OPERATOR_URL="https://raw.githubusercontent.com/projectcalico/calico/${CALICO_OPERATOR_VERSION}/manifests/tigera-operator.yaml"
 
 function deploy() {
   local table_name="aws-eks-cluster"
@@ -312,6 +315,41 @@ function uninstall_efs_driver() {
   fi
 }
 
+function install_calico() {
+  pushd extras/calico
+  read -r -d '\0' role_patch << EOM
+[
+  {
+    "op": "add",
+    "path": "/rules/0",
+    "value": {
+      "apiGroups": [""],
+      "resources": ["pods"],
+      "verbs": ["patch"]
+    }
+  }
+]
+\0
+EOM
+  local calico_ready
+  calico_ready=$(kubectl get daemonset -n kube-system aws-node -o json | jq -r '.metadata.annotations.calicoReady')
+  if [ "${calico_ready}" != true ]; then
+    kubectl patch clusterrole -n kube-system aws-node --type='json' -p="${role_patch}"
+    kubectl patch daemonset -n kube-system aws-node --patch-file cni-plugin-env.yaml
+    kubectl annotate daemonset -n kube-system aws-node calicoReady=true
+  fi
+  kubectl create -f "${CALICO_OPERATOR_URL}"
+  kubectl apply -f installation.yaml
+  popd
+}
+
+function uninstall_calico() {
+  pushd extras/calico
+  kubectl delete -f installation.yaml --ignore-not-found=true
+  popd
+  kubectl delete -f "${CALICO_OPERATOR_URL}" --ignore-not-found=true
+}
+
 function install() {
   number_of_args="$#"
   while (( number_of_args > 0 )); do
@@ -340,6 +378,10 @@ function install() {
         WITH_FLUENT_BIT=true
         shift
         ;;
+      "calico")
+        WITH_CALICO=true
+        shift
+        ;;
       *)
         shift
         ;;
@@ -349,6 +391,9 @@ function install() {
   kubeconfig
   if [ "${WITH_FLUENT_BIT}" = true ]; then
     install_fluent_bit
+  fi
+  if [ "${WITH_CALICO}" = true ]; then
+    install_calico
   fi
   if [ "${WITH_LB_CONTROLLER}" = true ]; then
     install_load_balancer_controller
@@ -376,6 +421,7 @@ function install() {
 function uninstall() {
   kubeconfig
   uninstall_fluent_bit
+  uninstall_calico
   uninstall_prometheus_stack
   uninstall_ingress_nginx
   uninstall_load_balancer_controller
