@@ -219,11 +219,13 @@ function uninstall_prometheus_stack() {
   pvc=$(kubectl get persistentvolumeclaims -n prometheus-stack -o json | jq -r '.items | map(.metadata.name)')
   local length
   length=$(jq -r 'length' <<< "$pvc")
-  for i in $(seq 0 $((length-1))); do
-    name=$(jq -r ".[$i]" <<< "$pvc")
-    echo "Deleting PVC ${name}"
-    kubectl delete persistentvolumeclaims "${name}" -n prometheus-stack --ignore-not-found=true
-  done
+  if ((length > 0)); then
+    for i in $(seq 0 $((length-1))); do
+      name=$(jq -r ".[$i]" <<< "$pvc")
+      echo "Deleting PVC ${name}"
+      kubectl delete persistentvolumeclaims "${name}" -n prometheus-stack --ignore-not-found=true
+    done
+  fi
   kubectl delete persistentvolume alertmanager-efs-pv --ignore-not-found=true
   kubectl delete persistentvolume prometheus-efs-pv --ignore-not-found=true
   kubectl delete storageclass prometheus-stack-efs-sc --ignore-not-found=true
@@ -434,16 +436,18 @@ function delete_versions() {
   versions=$(jq -r '.Versions' <<< "$response")
   local length
   length=$(jq -r 'length' <<< "$versions")
-  for i in $(seq 0 $((length-1))); do
-    local version_id
-    local key
-    local item
-    item=$(jq -r ".[$i]" <<< "$versions")
-    version_id=$(jq -r '.VersionId' <<< "$item")
-    key=$(jq -r '.Key' <<< "$item")
-    echo "Deleting item VersionId=${version_id} Key=${key}"
-    aws s3api delete-object --bucket "$bucket_name" --key "$key" --version-id "$version_id" &> /dev/null
-  done
+  if ((length > 0)); then
+    for i in $(seq 0 $((length-1))); do
+      local version_id
+      local key
+      local item
+      item=$(jq -r ".[$i]" <<< "$versions")
+      version_id=$(jq -r '.VersionId' <<< "$item")
+      key=$(jq -r '.Key' <<< "$item")
+      echo "Deleting item VersionId=${version_id} Key=${key}"
+      aws s3api delete-object --bucket "$bucket_name" --key "$key" --version-id "$version_id" &> /dev/null
+    done
+  fi
 }
 
 function clean_backend_bucket() {
@@ -469,11 +473,13 @@ function delete_log_groups_page() {
   local groups
   groups=$(jq -r '.logGroups' <<< "$response")
   length=$(jq -r 'length' <<< "$groups")
-  for i in $(seq 0 $((length-1))); do
-    group_name=$(jq -r ".[$i].logGroupName" <<< "$groups")
-    echo "Deleting log group ${group_name}"
-    aws logs delete-log-group --log-group-name "$group_name"
-  done
+  if ((length > 0)); then
+    for i in $(seq 0 $((length-1))); do
+      group_name=$(jq -r ".[$i].logGroupName" <<< "$groups")
+      echo "Deleting log group ${group_name}"
+      aws logs delete-log-group --log-group-name "$group_name"
+    done
+  fi
 }
 
 function remove_log_groups() {
