@@ -1,0 +1,12 @@
+commonAnnotations:
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/part-of: cluster-role
+namePrefix: demo-
+namespace: demo-namespace
+resources:
+  - deployment.yaml
+  - namespace.yaml
+  - service.yaml
+  - cluster_role.yaml
+  - service_account.yaml
+  - cluster_role_binding.yaml

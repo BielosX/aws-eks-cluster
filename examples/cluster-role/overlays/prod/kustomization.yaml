@@ -1,0 +1,9 @@
+resources:
+  - ../../base
+replicas:
+  - name: demo-deployment
+    count: 3
+labels:
+  - includeTemplates: true
+    pairs:
+      environment: production
