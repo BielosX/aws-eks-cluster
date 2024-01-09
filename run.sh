@@ -15,10 +15,25 @@ WITH_EFS_DRIVER=false
 SKIP_UNINSTALL=false
 KEEP_LOGS=false
 WITH_CALICO=false
+WITH_NODES_NUMBER="2"
 CALICO_OPERATOR_VERSION="v3.26.4"
 CALICO_OPERATOR_URL="https://raw.githubusercontent.com/projectcalico/calico/${CALICO_OPERATOR_VERSION}/manifests/tigera-operator.yaml"
 
 function deploy() {
+  number_of_args="$#"
+  while (( number_of_args > 0 )); do
+    case "$1" in
+      "--nodes")
+        WITH_NODES_NUMBER="$2"
+        shift
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+    number_of_args="$#"
+  done
   local table_name="aws-eks-cluster"
   aws cloudformation deploy \
     --template-file backend.yaml \
@@ -32,7 +47,7 @@ function deploy() {
     -backend-config="dynamodb_table=${table_name}" \
     -backend-config="region=${AWS_REGION}" \
     -backend-config="key=cluster.tfstate"
-  tofu apply -auto-approve
+  tofu apply -auto-approve -var="nodes=${WITH_NODES_NUMBER}"
   popd
 }
 
@@ -347,9 +362,9 @@ EOM
 
 function uninstall_calico() {
   pushd extras/calico
-  kubectl delete -f installation.yaml --ignore-not-found=true
+  kubectl delete -f installation.yaml --ignore-not-found=true || true
   popd
-  kubectl delete -f "${CALICO_OPERATOR_URL}" --ignore-not-found=true
+  kubectl delete -f "${CALICO_OPERATOR_URL}" --ignore-not-found=true || true
 }
 
 function install() {
@@ -546,7 +561,7 @@ function dashboard_port_forward() {
 }
 
 case "$1" in
-  "deploy") deploy ;;
+  "deploy") deploy "$@" ;;
   "destroy") destroy "$@" ;;
   "install") install "$@" ;;
   "uninstall") uninstall ;;

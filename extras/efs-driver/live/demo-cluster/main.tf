@@ -14,8 +14,8 @@ terraform {
 }
 
 module "efs-driver" {
-  source = "../../modules"
-  oicd-id = var.oicd-id
+  source     = "../../modules"
+  oicd-id    = var.oicd-id
   subnet-ids = var.subnet-ids
-  vpc-id = var.vpc-id
+  vpc-id     = var.vpc-id
 }

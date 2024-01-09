@@ -21,4 +21,6 @@ module "cluster" {
   source             = "../../modules"
   availability-zones = slice(data.aws_availability_zones.available.names, 0, 2)
   cluster-name       = "demo-cluster"
+  min-size           = var.nodes
+  max-size           = var.nodes
 }
