@@ -39,6 +39,9 @@ function deploy() {
     --template-file backend.yaml \
     --stack-name "${CLUSTER_BACKEND_STACK}" \
     --parameter-overrides "TableName=${table_name}" "BucketNamePrefix=aws-eks-cluster"
+  aws cloudformation update-termination-protection \
+    --stack-name "${CLUSTER_BACKEND_STACK}" \
+    --enable-termination-protection
   pushd live/demo-cluster
   get_stack_outputs "${CLUSTER_BACKEND_STACK}"
   local bucket_name
@@ -538,6 +541,9 @@ function destroy() {
   local bucket_name
   bucket_name=$(jq -r '.BucketName.OutputValue' <<< "$outputs")
   clean_backend_bucket "${bucket_name}"
+  aws cloudformation update-termination-protection \
+    --stack-name "${CLUSTER_BACKEND_STACK}" \
+    --no-enable-termination-protection
   delete_stack "${CLUSTER_BACKEND_STACK}"
   if [ "${KEEP_LOGS}" = false ]; then
     echo "Removing cluster logs"
