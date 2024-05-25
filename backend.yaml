@@ -1,13 +1,11 @@
 Parameters:
-  TableName:
-    Type: String
-  BucketNamePrefix:
+  NamePrefix:
     Type: String
 Resources:
   StateBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${BucketNamePrefix}-${AWS::Region}-${AWS::AccountId}"
+      BucketName: !Sub "${NamePrefix}-tofu-state-${AWS::Region}-${AWS::AccountId}"
       VersioningConfiguration:
         Status: "Enabled"
       PublicAccessBlockConfiguration:
@@ -21,7 +19,7 @@ Resources:
   LockTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Ref TableName
+      TableName: !Sub "${NamePrefix}-tofu-lock"
       BillingMode: "PAY_PER_REQUEST"
       AttributeDefinitions:
         - AttributeName: "LockID"
@@ -29,6 +27,15 @@ Resources:
       KeySchema:
         - AttributeName: "LockID"
           KeyType: "HASH"
-Outputs:
-  BucketName:
-    Value: !Ref StateBucket
+  StateBucketName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "${NamePrefix}-state-bucket"
+      Type: String
+      Value: !Ref StateBucket
+  LockTableName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "${NamePrefix}-lock-table"
+      Type: String
+      Value: !Ref LockTable
