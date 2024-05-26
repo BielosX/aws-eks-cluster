@@ -1,0 +1,16 @@
+- name: Install required packages
+  hosts: localhost
+  vars:
+    kubeconfig: "{{ lookup('ansible.builtin.env', 'KUBECONFIG', default='~/.kube/config') }}"
+
+  tasks:
+    - name: Add external secrets repo
+      kubernetes.core.helm_repository:
+        name: external-secrets
+        repo_url: "https://charts.external-secrets.io"
+    - name: Deploy latest version of External Secrets Operator
+      kubernetes.core.helm:
+        name: external-secrets
+        chart_ref: external-secrets/external-secrets
+        release_namespace: external-secrets
+        create_namespace: true

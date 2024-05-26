@@ -12,7 +12,7 @@ locals {
   nat_gateways = var.single_nat_gateway ? 1 : local.number_azs
 }
 
-resource "aws_subnet" "public-subnet" {
+resource "aws_subnet" "public_subnet" {
   count                   = local.number_azs
   vpc_id                  = aws_vpc.vpc.id
   availability_zone       = var.availability_zones[count.index]
@@ -24,7 +24,7 @@ resource "aws_subnet" "public-subnet" {
   }
 }
 
-resource "aws_internet_gateway" "internet-gateway" {
+resource "aws_internet_gateway" "internet_gateway" {
   vpc_id = aws_vpc.vpc.id
   tags = {
     Name : "${var.name}-internet-gateway"
@@ -35,7 +35,7 @@ resource "aws_route_table" "public-route-table" {
   vpc_id = aws_vpc.vpc.id
 
   route {
-    gateway_id = aws_internet_gateway.internet-gateway.id
+    gateway_id = aws_internet_gateway.internet_gateway.id
     cidr_block = "0.0.0.0/0"
   }
 
@@ -44,13 +44,13 @@ resource "aws_route_table" "public-route-table" {
   }
 }
 
-resource "aws_route_table_association" "public-route-table-association" {
+resource "aws_route_table_association" "public_route_table_association" {
   count          = local.number_azs
   route_table_id = aws_route_table.public-route-table.id
-  subnet_id      = aws_subnet.public-subnet[count.index].id
+  subnet_id      = aws_subnet.public_subnet[count.index].id
 }
 
-resource "aws_subnet" "private-subnet" {
+resource "aws_subnet" "private_subnet" {
   count                   = local.number_azs
   vpc_id                  = aws_vpc.vpc.id
   availability_zone       = var.availability_zones[count.index]
@@ -70,22 +70,22 @@ resource "aws_eip" "eip" {
   }
 }
 
-resource "aws_nat_gateway" "nat-gateway" {
+resource "aws_nat_gateway" "nat_gateway" {
   count         = local.nat_gateways
-  subnet_id     = aws_subnet.public-subnet[count.index].id
+  subnet_id     = aws_subnet.public_subnet[count.index].id
   allocation_id = aws_eip.eip[count.index].id
   tags = {
     Name : "${var.name}-nat-gateway"
   }
 }
 
-resource "aws_route_table" "private-route-table" {
+resource "aws_route_table" "private_route_table" {
   vpc_id = aws_vpc.vpc.id
 
   dynamic "route" {
     for_each = range(local.nat_gateways)
     content {
-      nat_gateway_id = aws_nat_gateway.nat-gateway[route.key].id
+      nat_gateway_id = aws_nat_gateway.nat_gateway[route.key].id
       cidr_block     = "0.0.0.0/0"
     }
   }
@@ -95,8 +95,8 @@ resource "aws_route_table" "private-route-table" {
   }
 }
 
-resource "aws_route_table_association" "private-route-table-association" {
+resource "aws_route_table_association" "private_route_table_association" {
   count          = local.number_azs
-  route_table_id = aws_route_table.private-route-table.id
-  subnet_id      = aws_subnet.private-subnet[count.index].id
+  route_table_id = aws_route_table.private_route_table.id
+  subnet_id      = aws_subnet.private_subnet[count.index].id
 }

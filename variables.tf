@@ -21,3 +21,23 @@ variable "availability_zones" {
 variable "subnet_size" {
   type = number
 }
+
+variable "private_endpoint" {
+  type = bool
+}
+
+variable "node_group_max" {
+  type = number
+}
+
+variable "node_group_min" {
+  type = number
+}
+
+variable "instance_types" {
+  type = list(string)
+}
+
+variable "kubernetes_version" {
+  type = string
+}
