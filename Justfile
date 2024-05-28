@@ -16,13 +16,13 @@ tofu-init:
     #!/bin/bash
     state_bucket=$(aws ssm get-parameter --name "{{name-prefix}}-state-bucket" | jq -r '.Parameter.Value')
     lock_table=$(aws ssm get-parameter --name "{{name-prefix}}-lock-table" | jq -r '.Parameter.Value')
-    tofu init \
-      -backend-config="{{ justfile_directory() }}/demo.tfbackend" \
+    tofu -chdir="{{ justfile_directory() }}/tf" init \
+      -backend-config="demo.tfbackend" \
       -backend-config="bucket=${state_bucket}" \
       -backend-config="dynamodb_table=${lock_table}"
 
 deploy: deploy-backend tofu-init
-    tofu apply -auto-approve -var-file="{{ justfile_directory() }}/demo.tfvars"
+    tofu -chdir="{{ justfile_directory() }}/tf" apply -auto-approve -var-file="demo.tfvars"
 
 kubeconfig:
     aws eks update-kubeconfig --name "demo"
@@ -31,4 +31,4 @@ install-packages: kubeconfig
     ansible-playbook "{{ justfile_directory() }}/playbooks/install.yaml"
 
 destroy:
-    tofu destroy -auto-approve -var-file="{{ justfile_directory() }}/demo.tfvars"
+    tofu -chdir="{{ justfile_directory() }}/tf" destroy -auto-approve -var-file="demo.tfvars"
