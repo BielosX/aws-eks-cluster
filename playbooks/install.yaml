@@ -14,3 +14,25 @@
         chart_ref: external-secrets/external-secrets
         release_namespace: external-secrets
         create_namespace: true
+    - name: Add eks charts repo
+      kubernetes.core.helm_repository:
+        name: eks
+        repo_url: "https://aws.github.io/eks-charts"
+    - name: describe LB Controller Role
+      amazon.aws.iam_role_info:
+        name: aws-load-balancer-controller-iam-role
+      register: lb_controller_role
+    - name: Deploy latest version of AWS Load Balancer Controller
+      kubernetes.core.helm:
+        name: aws-load-balancer-controller
+        chart_ref: eks/aws-load-balancer-controller
+        release_namespace: kube-system
+        create_namespace: false
+        force: true
+        values:
+          clusterName: demo
+          serviceAccount:
+            create: true
+            name: aws-load-balancer-controller
+            annotations:
+              eks.amazonaws.com/role-arn: "{{ lb_controller_role.iam_roles[0].arn }}"
