@@ -4,7 +4,7 @@ name-prefix := "eks"
 stack-name := name-prefix + "-backend"
 
 format:
-    tofu fmt -recursive {{ justfile_directory() }}
+    tofu fmt -recursive "{{ justfile_directory() }}/tf"
 
 deploy-backend:
     aws cloudformation deploy \
