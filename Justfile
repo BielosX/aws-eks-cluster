@@ -30,5 +30,19 @@ kubeconfig:
 install-packages: kubeconfig
     ansible-playbook "{{ justfile_directory() }}/playbooks/install.yaml"
 
-destroy:
+clean-bucket:
+    #!/bin/bash
+    state_bucket=$(aws ssm get-parameter --name "{{name-prefix}}-state-bucket" | jq -r '.Parameter.Value')
+    export PIPENV_PIPFILE="{{ justfile_directory() }}/scripts/Pipfile"
+    pipenv run python "{{ justfile_directory() }}/scripts/clean-bucket.py" "${state_bucket}"
+
+delete-backend:
+    #!/bin/bash
+    export PIPENV_PIPFILE="{{ justfile_directory() }}/scripts/Pipfile"
+    pipenv run python "{{ justfile_directory() }}/scripts/delete-stack.py" "{{ stack-name }}"
+
+
+destroy-infra:
     tofu -chdir="{{ justfile_directory() }}/tf" destroy -auto-approve -var-file="demo.tfvars"
+
+destroy: destroy-infra clean-bucket delete-backend
